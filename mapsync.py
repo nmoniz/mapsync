@@ -5,6 +5,7 @@ import traceback
 import paramiko
 import os
 import subprocess
+import re
 
 CONFIG_MAP_PATH = 'mappath'
 CONFIG_USER = 'user'
@@ -31,12 +32,12 @@ def sync_files(sync_map, ssh, sftp):
         destinationPath = destinationPath.strip()
 
         if get_remote_md5(destinationPath, ssh) != get_local_md5(sourcePath):
-            print('> (' + str(os.path.getsize(sourcePath)) + ' Bytes) [' + sourcePath + '] -> [' + destinationPath + ']')
+            print('> (' + str(os.path.getsize(sourcePath)) + ' Bytes) [' + re.search('([^/]+)$', sourcePath).group(0) + '] -> [' + destinationPath + ']')
             # send file
             sftp.put(sourcePath, destinationPath)
         else:
             # already synced, do not send file
-            print('> [' + sourcePath +  '] synced')
+            print('> [' + re.search('([^/]+)$', sourcePath).group(0) +  '] synced')
 
 
 def read_map(file):
