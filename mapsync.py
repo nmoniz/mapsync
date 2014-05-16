@@ -7,6 +7,8 @@ import os
 import subprocess
 import re
 
+from stopwatch import Stopwatch
+
 CONFIG_MAP_PATH = 'mappath'
 CONFIG_USER = 'user'
 CONFIG_PASSWORD = 'password'
@@ -26,18 +28,28 @@ def get_local_md5(file):
 
 
 def sync_files(sync_map, ssh, sftp):
+    watch = Stopwatch(True)
+    sent_count = 0
+    skipped_count = 0
+
     for pair in sync_map:
         sourcePath, destinationPath = pair.split(',')
         sourcePath = sourcePath.strip()
         destinationPath = destinationPath.strip()
 
         if get_remote_md5(destinationPath, ssh) != get_local_md5(sourcePath):
-            print('> (' + str(os.path.getsize(sourcePath)) + ' Bytes) [' + re.search('([^/]+)$', sourcePath).group(0) + '] -> [' + destinationPath + ']')
+            print('> syncing [' + re.search('([^/]+)$', sourcePath).group(0) + '] -> [' + destinationPath + '] (sending ' + str(os.path.getsize(sourcePath)) + ' Bytes)')
             # send file
+            watch.resume()
             sftp.put(sourcePath, destinationPath)
+            watch.pause()
+            sent_count += 1
         else:
             # already synced, do not send file
-            print('> [' + re.search('([^/]+)$', sourcePath).group(0) +  '] synced')
+            print('> synced [' + re.search('([^/]+)$', sourcePath).group(0) + '] (skipped)')
+            skipped_count += 1
+
+    return sent_count, skipped_count, watch.time()
 
 
 def read_map(file):
@@ -66,6 +78,10 @@ def main():
                 key, value = arg.split(':')
                 configs[key] = value
 
+        print('Reading sync map: ' + configs[CONFIG_MAP_PATH])
+        syncMap = read_map(configs[CONFIG_MAP_PATH])
+        print('[ OK ]')
+
         print('Connecting: ' + configs[CONFIG_USER] + '@' + configs[CONFIG_HOST])
 
         sshClient = paramiko.SSHClient()
@@ -78,20 +94,18 @@ def main():
 
         print('[ OK ]')
 
-        print('Reading sync map: ' + configs[CONFIG_MAP_PATH])
-        syncMap = read_map(configs[CONFIG_MAP_PATH])
+        print('Syncing: ' + str(len(syncMap)) + ' files')
+        files_sent, files_skipped, network_time = sync_files(syncMap, sshClient, sftp)
         print('[ OK ]')
 
-        print('Syncing: ' + str(len(syncMap)) + ' files')
-        sync_files(syncMap, sshClient, sftp)
-        print('[ OK ]')
+        print('Updated: ' + str(files_sent) + ' (total sync time - ' + str(network_time/1000) + 's)')
+        print('Skipped: ' + str(files_skipped))
 
         transport.close()
         sshClient.close()
     except Exception as e:
         print('[ ERROR ]')
         traceback.print_exc()
-
 
 if __name__ == "__main__":
     main()
